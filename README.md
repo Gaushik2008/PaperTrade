@@ -10,6 +10,6 @@ Paper-trading web app with ₹10,00,000 virtual capital and trainable trading ag
 - Persistence (localStorage), keyboard shortcuts: `B` buy · `S` sell · `Space` pause · `T` theme
 
 ## Run
-Open `index.html` in a browser. To use live data, run a proxy to https://github.com/0xramm/Indian-Stock-Market-API and set the `API` constant in `index.html`.
+Open `index.html` in a browser. Live NSE quotes are pulled from [0xramm/Indian-Stock-Market-API](https://github.com/0xramm/Indian-Stock-Market-API) (`/stock/list`, polled every 5s); the app falls back to the simulated feed if it is unreachable. Set `API=""` in `index.html` to force simulation, or point it at your own deployment.
 
 Virtual money only; no real funds.
