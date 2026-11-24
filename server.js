@@ -11,25 +11,25 @@ const IAPI = 'https://stock.indianapi.in';
 const QNAME = { RELIANCE: 'Reliance', TCS: 'TCS', INFY: 'Infosys', HDFCBANK: 'HDFC Bank', ICICIBANK: 'ICICI Bank', SBIN: 'State Bank of India', ITC: 'ITC', LT: 'Larsen & Toubro' };
 const num = v => { if (v && typeof v === 'object') v = v.NSE ?? v.nse ?? v.BSE ?? v.value; v = parseFloat(String(v ?? '').replace(/[₹,\s]/g, '')); return isFinite(v) && v > 0 ? v : null; };
 let cache = { t: 0, data: {}, src: '' };
-async function viaTwelveData() {         // twelvedata.com  (batch /quote, NSE)
+async function viaTwelveData(L) {         // twelvedata.com  (batch /quote, NSE)
   const out = {};
   try {
-    const u = 'https://api.twelvedata.com/quote?apikey=' + encodeURIComponent(TDKEY) + '&symbol=' + SYMS.map(s => s + ':NSE').join(',');
+    const u = 'https://api.twelvedata.com/quote?apikey=' + encodeURIComponent(TDKEY) + '&symbol=' + L.map(s => s + ':NSE').join(',');
     const j = await (await fetch(u, { signal: AbortSignal.timeout(10000) })).json();
     const items = j && j.symbol ? [j] : Object.entries(j || {}).map(([k, v]) => v && typeof v === 'object' ? { symbol: k, ...v } : null);
     items.forEach(d => {
       if (!d || d.status === 'error') return;
       const s = String(d.symbol || '').split(':')[0].toUpperCase(), price = num(d.close);
-      if (SYMS.includes(s) && price) out[s] = { price, prevClose: num(d.previous_close) };
+      if (L.includes(s) && price) out[s] = { price, prevClose: num(d.previous_close) };
     });
   } catch (e) {}
   return out;
 }
-async function viaIndianApi() {           // indianapi.in  (header: x-api-key)
+async function viaIndianApi(L) {           // indianapi.in  (header: x-api-key)
   const out = {};
-  await Promise.all(SYMS.map(async s => {
+  await Promise.all(L.map(async s => {
     try {
-      const r = await fetch(IAPI + '/stock?name=' + encodeURIComponent(QNAME[s]), { headers: { 'x-api-key': KEY }, signal: AbortSignal.timeout(8000) });
+      const r = await fetch(IAPI + '/stock?name=' + encodeURIComponent(QNAME[s] || s), { headers: { 'x-api-key': KEY }, signal: AbortSignal.timeout(8000) });
       if (!r.ok) return;
       const d = await r.json(), price = num(d.currentPrice);
       if (price) out[s] = { price, prevClose: num(d.previousClose) || num(d.stockTechnicalData && d.stockTechnicalData.previousClose) || null };
@@ -37,24 +37,27 @@ async function viaIndianApi() {           // indianapi.in  (header: x-api-key)
   }));
   return out;
 }
-async function viaNse() {                 // stock-nse-india fallback
+async function viaNse(L) {                 // stock-nse-india fallback
   const out = {};
-  await Promise.all(SYMS.map(async s => {
+  await Promise.all(L.map(async s => {
     try { const p = (await nse.getEquityDetails(s)).priceInfo; out[s] = { price: p.lastPrice, prevClose: p.previousClose }; } catch (e) {}
   }));
   return out;
 }
-async function quotes() {
+const caches = {};
+async function quotes(L) {
+  const id = L.join(','), c0 = caches[id] || { t: 0, data: {}, src: '' };
   const ttl = TDKEY ? 60000 : KEY ? 15000 : 3000;   // respect provider rate limits (Twelve Data free: 8 credits/min)
-  if (Date.now() - cache.t < ttl && Object.keys(cache.data).length) return cache;
+  if (Date.now() - c0.t < ttl && Object.keys(c0.data).length) return c0;
   let data = {}, src = '';
-  const ok = d => Object.keys(d).length >= 4;
-  if (TDKEY) { data = await viaTwelveData(); src = 'twelvedata.com'; }
-  if (!ok(data) && KEY) { data = await viaIndianApi(); src = 'indianapi.in'; }
-  if (!ok(data)) { data = await viaNse(); src = 'NSE via stock-nse-india'; }
-  if (Object.keys(data).length) cache = { t: Date.now(), data, src };
-  return cache;
+  const ok = d => Object.keys(d).length >= Math.min(4, L.length);
+  if (TDKEY) { data = await viaTwelveData(L); src = 'twelvedata.com'; }
+  if (!ok(data) && KEY) { data = await viaIndianApi(L); src = 'indianapi.in'; }
+  if (!ok(data)) { data = await viaNse(L); src = 'NSE via stock-nse-india'; }
+  if (Object.keys(data).length) caches[id] = { t: Date.now(), data, src };
+  return caches[id] || c0;
 }
+const symList = url => { const m = /[?&]symbols=([^&]*)/.exec(url); const l = m ? decodeURIComponent(m[1]).split(',').map(x => x.trim().toUpperCase().replace(/\.(NS|BO)$/, '')).filter(x => /^[A-Z0-9&-]{1,20}$/.test(x)).slice(0, 20) : []; return l.length ? l : SYMS; };
 http.createServer(async (req, res) => {
   if (req.url.startsWith('/api/debug')) {   // shows raw provider responses (key is never echoed)
     const out = { keys: { indianapi: !!KEY, twelvedata: !!TDKEY } };
@@ -67,8 +70,13 @@ http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify(out, null, 2));
   }
+  if (req.url.startsWith('/api/search')) {   // minimal: treat the query as an NSE symbol
+    const q = decodeURIComponent((/[?&]q=([^&]*)/.exec(req.url) || [, ''])[1]).trim().toUpperCase().replace(/\.(NS|BO)$/, '').replace(/\s+/g, '');
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ symbol: q, results: q ? [{ symbol: q }] : [] }));
+  }
   if (req.url.startsWith('/api/quotes')) {
-    const c = await quotes(), ok = Object.keys(c.data).length > 0;
+    const c = await quotes(symList(req.url)), ok = Object.keys(c.data).length > 0;
     res.writeHead(ok ? 200 : 502, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
     return res.end(JSON.stringify({ source: c.src, ts: c.t, quotes: c.data }));
   }
