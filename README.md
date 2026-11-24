@@ -9,7 +9,13 @@ Paper-trading web app with ₹10,00,000 virtual capital and trainable trading ag
 - Agent leaderboard, equity-curve comparison vs you, non-blocking training with progress bar
 - Persistence (localStorage), keyboard shortcuts: `B` buy · `S` sell · `Space` pause · `T` theme
 
-## Run
-Open `index.html` in a browser. Live NSE quotes are pulled from [0xramm/Indian-Stock-Market-API](https://github.com/0xramm/Indian-Stock-Market-API) (`/stock/list`, polled every 5s); the app falls back to the simulated feed if it is unreachable. Set `API=""` in `index.html` to force simulation, or point it at your own deployment.
+## Run with real NSE data
+```bash
+npm install
+npm start        # http://localhost:3000
+```
+`server.js` uses [hi-imcodeman/stock-nse-india](https://github.com/hi-imcodeman/stock-nse-india) to fetch real NSE quotes (NSE blocks browser requests, so a tiny Node server proxies them) and exposes `/api/quotes`. The app polls it every 5s. Badge shows **Live · NSE**.
 
-Virtual money only; no real funds.
+If the server isn't running (plain `index.html` / static hosting) the app tries the community API ([0xramm/Indian-Stock-Market-API](https://github.com/0xramm/Indian-Stock-Market-API)), then falls back to the built-in simulation.
+
+Virtual money only; no real funds. Quotes may be delayed and are for practice only.

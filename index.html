@@ -204,14 +204,12 @@ kbd{font:500 11px var(--mono);padding:2px 6px;border:1px solid var(--line);borde
 const CAP=1e6;
 const S={RELIANCE:2900,TCS:4100,INFY:1850,HDFCBANK:1700,ICICIBANK:1250,SBIN:820,ITC:470,LT:3600};
 const NAME={RELIANCE:'Reliance Industries',TCS:'Tata Consultancy',INFY:'Infosys',HDFCBANK:'HDFC Bank',ICICIBANK:'ICICI Bank',SBIN:'State Bank of India',ITC:'ITC Ltd',LT:'Larsen & Toubro'};
-/* Live NSE quotes from 0xramm/Indian-Stock-Market-API (GET /stock/list?symbols=A.NS,B.NS&res=num).
-   Set API='' to force the built-in simulation. If the feed is unreachable the app falls back to simulation automatically. */
-const API='https://military-jobye-haiqstudios-14f59639.koyeb.app';
-const $=id=>document.getElementById(id);
-const inr=n=>(n<0?'-':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{maximumFractionDigits:0});
-const inr2=n=>'₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
-const pct=n=>(n>=0?'+':'')+(n*100).toFixed(2)+'%';
-const COL=['#b6f24a','#6ea8fe','#ffbf47','#8b97a8'];
+/* Live NSE quotes: when served by `npm start` (server.js, powered by hi-imcodeman/stock-nse-india) the app reads same-origin /api/quotes.
+   Opened as a plain file or on static hosting, it falls back to the community API, then to the simulation. */
+const SAME=location.protocol.startsWith('http')&&!location.hostname.endsWith('claude.ai');
+const API=SAME?'':'https://military-jobye-haiqstudios-14f59639.koyeb.app';
+const LIVE_URLS=[...(SAME?['/api/quotes']:[]),...(API?[API+'/stock/list?res=num&symbols='+'RELIANCE,TCS,INFY,HDFCBANK,ICICIBANK,SBIN,ITC,LT'.split(',').map(k=>k+'.NS').join(',')]:[])];
+const HAS_LIVE=LIVE_URLS.length>0;
 let live=false,lastTry=0,lastLive=0,inflight=false,fails=0;
 let px,hist,prev,side=1,paused=false,curve=[],youCurve=[],trades=[],realised=0,training=false;
 const mkP=()=>({cash:CAP,pos:{},real:0});
@@ -324,13 +322,14 @@ function parseQuotes(j){
     if(Array.isArray(n)){n.forEach(x=>walk(x,''));return}
     const raw=String(n.symbol||n.ticker||n.sym||key||'').toUpperCase().replace(/\.(NS|BO)$/,'');
     const p=pickN(n,['currentprice','price','lastprice','ltp','regularmarketprice','last','close']);
-    if(S[raw]&&p){out[raw]={p,pc:pickN(n,['previousclose','prevclose','regularmarketpreviousclose','pc'])};return}
+    if(S[raw]&&p){out[raw]={p,pc:pickN(n,['previousclose','prevclose','prevclose','regularmarketpreviousclose','pc'])};return}
     for(const k in n)walk(n[k],k)})(j,'');
   return out}
 async function fetchLive(){
-  const u=API+'/stock/list?res=num&symbols='+Object.keys(S).map(k=>k+'.NS').join(',');
-  const c=new AbortController(),t=setTimeout(()=>c.abort(),8000);
-  try{const r=await fetch(u,{signal:c.signal,cache:'no-store'});if(!r.ok)throw 0;const m=parseQuotes(await r.json());if(Object.keys(m).length<4)throw 0;return m}finally{clearTimeout(t)}}
+  for(const u of LIVE_URLS){
+    const c=new AbortController(),t=setTimeout(()=>c.abort(),8000);
+    try{const r=await fetch(u,{signal:c.signal,cache:'no-store'});if(!r.ok)continue;const m=parseQuotes(await r.json());if(Object.keys(m).length>=4)return m}catch(e){}finally{clearTimeout(t)}
+  }throw 0}
 function applyQuotes(m){
   const first=!live;prev={...px};
   for(const k in S)if(m[k]){px[k]=m[k].p;if(m[k].pc)S[k]=m[k].pc}
@@ -339,8 +338,8 @@ function applyQuotes(m){
   live=true;lastLive=Date.now();fails=0;
   A.forEach(a=>agentAct(a,a.pf,hist,px,CAP*.05));curve.push(A.map(a=>eqty(a.pf,px)));if(curve.length>200)curve.shift();render()}
 function setBadge(){
-  $('modeTx').textContent=paused?'Paused':live?'Live · NSE':API?'Simulated · feed offline':'Live simulation';
-  $('mode').classList.toggle('paused',paused||(!live&&!!API));
+  $('modeTx').textContent=paused?'Paused':live?'Live · NSE':HAS_LIVE?'Simulated · feed offline':'Live simulation';
+  $('mode').classList.toggle('paused',paused||(!live&&HAS_LIVE));
   $('clock').textContent=(live?'NSE · live · ':'NSE · simulated · ')+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}
 
 /* wiring */
@@ -367,7 +366,7 @@ for(let i=0;i<40;i++){step(px);for(const k in px)hist[k].push(px[k])} /* warm-up
 render();
 setInterval(()=>{if(paused||training)return;
   const gap=fails>3?30000:5000;
-  if(API&&!inflight&&Date.now()-lastTry>gap){inflight=true;lastTry=Date.now();fetchLive().then(applyQuotes).catch(()=>{fails++;live=false}).finally(()=>{inflight=false;setBadge()})}
+  if(HAS_LIVE&&!inflight&&Date.now()-lastTry>gap){inflight=true;lastTry=Date.now();fetchLive().then(applyQuotes).catch(()=>{fails++;live=false}).finally(()=>{inflight=false;setBadge()})}
   if(live&&Date.now()-lastLive<20000)return; live=false;
   prev={...px};step(px);for(const k in px){hist[k].push(px[k]);if(hist[k].length>200)hist[k].shift()}
   A.forEach(a=>agentAct(a,a.pf,hist,px,CAP*.05));curve.push(A.map(a=>eqty(a.pf,px)));if(curve.length>200)curve.shift();render()},1500);

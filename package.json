@@ -1,0 +1,23 @@
+{
+  "name": "papertrade",
+  "version": "1.0.0",
+  "description": "Paper trading app with live NSE data",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gaushik2008/PaperTrade.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Gaushik2008/PaperTrade/issues"
+  },
+  "homepage": "https://github.com/Gaushik2008/PaperTrade#readme",
+  "dependencies": {
+    "stock-nse-india": "^1.4.0"
+  }
+}
