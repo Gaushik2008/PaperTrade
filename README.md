@@ -13,7 +13,9 @@ Paper-trading web app with ₹10,00,000 virtual capital and trainable trading ag
 Put your [indianapi.in](https://indianapi.in/indian-stock-market) key in a `.env` file (see `.env.example`; it is git-ignored, never commit it):
 ```
 INDIANAPI_KEY=your_key
+TWELVEDATA_KEY=your_twelvedata_key   # optional, tried first
 ```
+Priority: Twelve Data → indianapi.in → NSE (stock-nse-india). Note: Twelve Data's NSE coverage may need a paid plan; otherwise it falls through automatically.
 Without a key the server uses NSE directly via stock-nse-india.
 
 ```bash

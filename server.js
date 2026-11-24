@@ -6,11 +6,25 @@ const nse = new NseIndia();
 const SYMS = ['RELIANCE','TCS','INFY','HDFCBANK','ICICIBANK','SBIN','ITC','LT'];
 // load .env (INDIANAPI_KEY) without extra dependencies
 try { fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split('\n').forEach(l => { const m = l.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/); if (m && !process.env[m[1]]) process.env[m[1]] = m[2]; }); } catch (e) {}
-const KEY = process.env.INDIANAPI_KEY;
+const KEY = process.env.INDIANAPI_KEY, TDKEY = process.env.TWELVEDATA_KEY;
 const IAPI = 'https://stock.indianapi.in';
 const QNAME = { RELIANCE: 'Reliance', TCS: 'TCS', INFY: 'Infosys', HDFCBANK: 'HDFC Bank', ICICIBANK: 'ICICI Bank', SBIN: 'State Bank of India', ITC: 'ITC', LT: 'Larsen & Toubro' };
 const num = v => { if (v && typeof v === 'object') v = v.NSE ?? v.nse ?? v.BSE ?? v.value; v = parseFloat(String(v ?? '').replace(/[₹,\s]/g, '')); return isFinite(v) && v > 0 ? v : null; };
 let cache = { t: 0, data: {}, src: '' };
+async function viaTwelveData() {         // twelvedata.com  (batch /quote, NSE)
+  const out = {};
+  try {
+    const u = 'https://api.twelvedata.com/quote?apikey=' + encodeURIComponent(TDKEY) + '&symbol=' + SYMS.map(s => s + ':NSE').join(',');
+    const j = await (await fetch(u, { signal: AbortSignal.timeout(10000) })).json();
+    const items = j && j.symbol ? [j] : Object.entries(j || {}).map(([k, v]) => v && typeof v === 'object' ? { symbol: k, ...v } : null);
+    items.forEach(d => {
+      if (!d || d.status === 'error') return;
+      const s = String(d.symbol || '').split(':')[0].toUpperCase(), price = num(d.close);
+      if (SYMS.includes(s) && price) out[s] = { price, prevClose: num(d.previous_close) };
+    });
+  } catch (e) {}
+  return out;
+}
 async function viaIndianApi() {           // indianapi.in  (header: x-api-key)
   const out = {};
   await Promise.all(SYMS.map(async s => {
@@ -31,11 +45,13 @@ async function viaNse() {                 // stock-nse-india fallback
   return out;
 }
 async function quotes() {
-  const ttl = KEY ? 15000 : 3000;         // be gentle with the paid API's rate limits
+  const ttl = TDKEY ? 60000 : KEY ? 15000 : 3000;   // respect provider rate limits (Twelve Data free: 8 credits/min)
   if (Date.now() - cache.t < ttl && Object.keys(cache.data).length) return cache;
   let data = {}, src = '';
-  if (KEY) { data = await viaIndianApi(); src = 'indianapi.in'; }
-  if (Object.keys(data).length < 4) { data = await viaNse(); src = 'NSE via stock-nse-india'; }
+  const ok = d => Object.keys(d).length >= 4;
+  if (TDKEY) { data = await viaTwelveData(); src = 'twelvedata.com'; }
+  if (!ok(data) && KEY) { data = await viaIndianApi(); src = 'indianapi.in'; }
+  if (!ok(data)) { data = await viaNse(); src = 'NSE via stock-nse-india'; }
   if (Object.keys(data).length) cache = { t: Date.now(), data, src };
   return cache;
 }
