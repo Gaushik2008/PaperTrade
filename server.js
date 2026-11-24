@@ -56,6 +56,17 @@ async function quotes() {
   return cache;
 }
 http.createServer(async (req, res) => {
+  if (req.url.startsWith('/api/debug')) {   // shows raw provider responses (key is never echoed)
+    const out = { keys: { indianapi: !!KEY, twelvedata: !!TDKEY } };
+    try {
+      if (KEY) { const r = await fetch(IAPI + '/stock?name=TCS', { headers: { 'x-api-key': KEY }, signal: AbortSignal.timeout(8000) }); const t = await r.text(); out.indianapi = { status: r.status, body: t.slice(0, 1500) }; }
+    } catch (e) { out.indianapi = { error: String(e.message || e) }; }
+    try {
+      if (TDKEY) { const r = await fetch('https://api.twelvedata.com/quote?symbol=TCS:NSE&apikey=' + encodeURIComponent(TDKEY), { signal: AbortSignal.timeout(8000) }); out.twelvedata = { status: r.status, body: (await r.text()).slice(0, 600) }; }
+    } catch (e) { out.twelvedata = { error: String(e.message || e) }; }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify(out, null, 2));
+  }
   if (req.url.startsWith('/api/quotes')) {
     const c = await quotes(), ok = Object.keys(c.data).length > 0;
     res.writeHead(ok ? 200 : 502, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
