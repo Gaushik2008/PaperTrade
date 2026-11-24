@@ -10,6 +10,12 @@ Paper-trading web app with ₹10,00,000 virtual capital and trainable trading ag
 - Persistence (localStorage), keyboard shortcuts: `B` buy · `S` sell · `Space` pause · `T` theme
 
 ## Run with real NSE data
+Put your [indianapi.in](https://indianapi.in/indian-stock-market) key in a `.env` file (see `.env.example`; it is git-ignored, never commit it):
+```
+INDIANAPI_KEY=your_key
+```
+Without a key the server uses NSE directly via stock-nse-india.
+
 ```bash
 npm install
 npm start        # http://localhost:3000
